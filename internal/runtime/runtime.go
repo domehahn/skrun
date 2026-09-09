@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domehahn/skrun/internal/broker"
 	"github.com/domehahn/skrun/internal/policy"
 	"github.com/domehahn/skrun/internal/receipt"
 )
@@ -26,6 +28,7 @@ type Request struct {
 	Command                string
 	Args                   []string
 	Production             bool
+	CaptureOutput          bool
 	SignKey                ed25519.PrivateKey
 }
 type Backend interface {
@@ -74,6 +77,28 @@ func Execute(req Request) (rc receipt.Receipt, runErr error) {
 		rc.FinishedAt = time.Now().UTC()
 		return rc, fmt.Errorf("command %q denied by policy", base)
 	}
+
+	// Interpose Egress and MCP Brokers
+	egressBroker := broker.NewEgressBroker(req.Policy)
+	if !req.Policy.AllowNetwork {
+		rc.DeniedActions = append(rc.DeniedActions, receipt.DeniedAction{Type: "network", Value: "all", Reason: "network access is disabled by policy"})
+	} else if len(req.Policy.AllowedEgress) > 0 {
+		for _, e := range req.Policy.AllowedEgress {
+			if ok, reason := egressBroker.AuthorizeEgress(e.Domain, e.Port); !ok {
+				rc.DeniedActions = append(rc.DeniedActions, receipt.DeniedAction{Type: "egress", Value: e.Domain, Reason: reason})
+			}
+		}
+	}
+
+	mcpBroker := broker.NewMCPBroker(req.Policy)
+	if req.Policy.MCPBroker != nil {
+		for _, tool := range req.Policy.MCPBroker.AllowedTools {
+			if ok, reason := mcpBroker.AuthorizeTool(tool); !ok {
+				rc.DeniedActions = append(rc.DeniedActions, receipt.DeniedAction{Type: "mcp_tool", Value: tool, Reason: reason})
+			}
+		}
+	}
+
 	absCmd, err := exec.LookPath(req.Command)
 	if err != nil {
 		rc.Error = err.Error()
@@ -93,8 +118,20 @@ func Execute(req Request) (rc receipt.Receipt, runErr error) {
 	out := &limitedBuffer{max: req.Policy.MaxOutputBytes}
 	errOut := &limitedBuffer{max: req.Policy.MaxOutputBytes}
 	err = backend.Run(ctx, req, out, errOut)
-	rc.Stdout = out.buf.String()
-	rc.Stderr = errOut.buf.String()
+
+	rawOut := out.buf.String()
+	rawErr := errOut.buf.String()
+
+	outSum := sha256.Sum256([]byte(rawOut))
+	errSum := sha256.Sum256([]byte(rawErr))
+	rc.StdoutDigest = "sha256:" + hex.EncodeToString(outSum[:])
+	rc.StderrDigest = "sha256:" + hex.EncodeToString(errSum[:])
+
+	if req.CaptureOutput || !req.Production {
+		rc.Stdout = rawOut
+		rc.Stderr = rawErr
+	}
+
 	rc.OutputTruncated = out.truncated || errOut.truncated
 	rc.TimedOut = errors.Is(ctx.Err(), context.DeadlineExceeded)
 	rc.FinishedAt = time.Now().UTC()

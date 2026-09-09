@@ -31,6 +31,8 @@ type Receipt struct {
 	OutputTruncated    bool           `json:"output_truncated"`
 	Stdout             string         `json:"stdout,omitempty"`
 	Stderr             string         `json:"stderr,omitempty"`
+	StdoutDigest       string         `json:"stdout_digest,omitempty"`
+	StderrDigest       string         `json:"stderr_digest,omitempty"`
 	DeniedActions      []DeniedAction `json:"denied_actions"`
 	Error              string         `json:"error,omitempty"`
 	Signature          string         `json:"signature,omitempty"`

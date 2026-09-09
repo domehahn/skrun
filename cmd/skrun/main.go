@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/domehahn/skrun/internal/artifact"
 	"github.com/domehahn/skrun/internal/policy"
@@ -135,7 +136,8 @@ func execCmd(args []string) error {
 	art := fs.String("artifact-dir", "", "artifact directory")
 	workspace := fs.String("workspace", ".", "workspace directory")
 	receiptPath := fs.String("receipt", "runtime-receipt.json", "receipt output")
-	signKeyHex := fs.String("sign-key", "", "hex-encoded Ed25519 private key for signing receipt")
+	signKeyFile := fs.String("sign-key-file", "", "path to file containing hex-encoded Ed25519 private key")
+	captureOutput := fs.Bool("capture-output", false, "capture raw stdout/stderr in receipt (defaults to false in production)")
 	prod := fs.Bool("production", false, "require production-grade isolation")
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
@@ -156,22 +158,34 @@ func execCmd(args []string) error {
 	}
 
 	var privKey ed25519.PrivateKey
-	if *signKeyHex != "" {
-		keyBytes, err := hex.DecodeString(*signKeyHex)
+	keyHex := ""
+	if *signKeyFile != "" {
+		b, err := os.ReadFile(*signKeyFile)
+		if err != nil {
+			return fmt.Errorf("failed to read --sign-key-file: %w", err)
+		}
+		keyHex = strings.TrimSpace(string(b))
+	} else if envKey := os.Getenv("SKRUN_SIGNING_KEY"); envKey != "" {
+		keyHex = strings.TrimSpace(envKey)
+	}
+
+	if keyHex != "" {
+		keyBytes, err := hex.DecodeString(keyHex)
 		if err != nil || len(keyBytes) != ed25519.PrivateKeySize {
-			return errors.New("invalid --sign-key: must be hex-encoded Ed25519 private key")
+			return errors.New("invalid signing key: must be hex-encoded Ed25519 private key (64 bytes)")
 		}
 		privKey = ed25519.PrivateKey(keyBytes)
 	}
 
 	rc, runErr := run.Execute(run.Request{
-		Policy:      pol,
-		ArtifactDir: *art,
-		Workspace:   *workspace,
-		Command:     cmdArgs[0],
-		Args:        cmdArgs[1:],
-		Production:  *prod,
-		SignKey:     privKey,
+		Policy:        pol,
+		ArtifactDir:   *art,
+		Workspace:     *workspace,
+		Command:       cmdArgs[0],
+		Args:          cmdArgs[1:],
+		Production:    *prod,
+		CaptureOutput: *captureOutput,
+		SignKey:       privKey,
 	})
 	b, _ := json.MarshalIndent(rc, "", "  ")
 	b = append(b, '\n')
@@ -210,7 +224,7 @@ func doctorCmd(args []string) error {
 			}
 			fmt.Println("sandbox-exec=", p)
 		case "windows":
-			fmt.Println("windows jobobject isolation=AVAILABLE")
+			return fmt.Errorf("windows AppContainer sandbox backend is not yet implemented; refusing insecure fallback")
 		default:
 			return fmt.Errorf("production backend unavailable on %s", runtime.GOOS)
 		}

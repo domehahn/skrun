@@ -10,11 +10,11 @@ import (
 
 type windowsSandboxBackend struct{}
 
-func (w windowsSandboxBackend) Name() string { return "windows-jobobject" }
-func (w windowsSandboxBackend) Secure() bool { return true }
+func (w windowsSandboxBackend) Name() string { return "windows-dev" }
+func (w windowsSandboxBackend) Secure() bool { return false }
 
 func secureBackend() (Backend, error) {
-	return windowsSandboxBackend{}, nil
+	return nil, fmt.Errorf("windows production AppContainer sandbox is not yet fully implemented; refusing insecure fallback")
 }
 
 func (w windowsSandboxBackend) Run(ctx context.Context, req Request, stdout, stderr io.Writer) error {
