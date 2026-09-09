@@ -101,4 +101,3 @@ func TestSignedDecisionEnvelope(t *testing.T) {
 		t.Fatal("expected error for tampered decision envelope")
 	}
 }
-
