@@ -40,6 +40,10 @@ type Policy struct {
 	AllowedCommands     []string         `json:"allowed_commands"`
 	AllowedSecrets      []string         `json:"allowed_secrets"`
 	AllowWorkspaceWrite bool             `json:"allow_workspace_write"`
+	ReadPaths           []string         `json:"read_paths,omitempty"`
+	WritePaths          []string         `json:"write_paths,omitempty"`
+	DeletePaths         []string         `json:"delete_paths,omitempty"`
+	TmpPaths            []string         `json:"tmp_paths,omitempty"`
 	AllowNetwork        bool             `json:"allow_network"`
 	AllowedEgress       []EgressRule     `json:"allowed_egress,omitempty"`
 	ResourceLimits      *ResourceLimits  `json:"resource_limits,omitempty"`

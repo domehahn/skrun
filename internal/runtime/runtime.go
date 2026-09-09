@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domehahn/skrun/internal/artifact"
 	"github.com/domehahn/skrun/internal/broker"
 	"github.com/domehahn/skrun/internal/policy"
 	"github.com/domehahn/skrun/internal/receipt"
@@ -78,6 +79,22 @@ func Execute(req Request) (rc receipt.Receipt, runErr error) {
 		return rc, fmt.Errorf("command %q denied by policy", base)
 	}
 
+	// Materialize snapshot to eliminate TOCTOU disk mutation race conditions
+	snapDir, snapDigest, cleanup, err := artifact.MaterializeSnapshot(req.ArtifactDir)
+	if err != nil {
+		rc.Error = err.Error()
+		rc.FinishedAt = time.Now().UTC()
+		return rc, fmt.Errorf("artifact snapshot materialization failed: %w", err)
+	}
+	defer cleanup()
+
+	if snapDigest != req.Policy.ArtifactDigest {
+		rc.Error = "artifact digest mismatch"
+		rc.FinishedAt = time.Now().UTC()
+		return rc, fmt.Errorf("artifact snapshot digest mismatch: policy=%s actual=%s", req.Policy.ArtifactDigest, snapDigest)
+	}
+	req.ArtifactDir = snapDir
+
 	// Interpose Egress and MCP Brokers
 	egressBroker := broker.NewEgressBroker(req.Policy)
 	if !req.Policy.AllowNetwork {
@@ -113,6 +130,12 @@ func Execute(req Request) (rc receipt.Receipt, runErr error) {
 		return rc, err
 	}
 	rc.IsolationBackend = backend.Name()
+	rc.WorkloadIdentity = &receipt.WorkloadIdentity{
+		BinaryVersion:    "1.0.0",
+		Platform:         runtime.GOOS + "/" + runtime.GOARCH,
+		IsolationBackend: backend.Name(),
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.Policy.TimeoutSeconds)*time.Second)
 	defer cancel()
 	out := &limitedBuffer{max: req.Policy.MaxOutputBytes}
@@ -126,6 +149,12 @@ func Execute(req Request) (rc receipt.Receipt, runErr error) {
 	errSum := sha256.Sum256([]byte(rawErr))
 	rc.StdoutDigest = "sha256:" + hex.EncodeToString(outSum[:])
 	rc.StderrDigest = "sha256:" + hex.EncodeToString(errSum[:])
+
+	rc.ResourceUsage = &receipt.ResourceUsage{
+		StdoutBytes: int64(len(rawOut)),
+		StderrBytes: int64(len(rawErr)),
+		DurationMS:  time.Since(started).Milliseconds(),
+	}
 
 	if req.CaptureOutput || !req.Production {
 		rc.Stdout = rawOut

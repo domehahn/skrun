@@ -11,10 +11,11 @@ import (
 	"github.com/domehahn/skrun/internal/policy"
 )
 
-func defaultTestPolicy() policy.Policy {
+func defaultTestPolicy(artDir string) policy.Policy {
+	d, _ := artifact.DigestDirectory(artDir)
 	return policy.Policy{
 		SchemaVersion:   "1.0.0",
-		ArtifactDigest:  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ArtifactDigest:  d,
 		AllowedCommands: []string{"echo", "sh", "bash"},
 		TimeoutSeconds:  5,
 		MaxOutputBytes:  1024,
@@ -38,14 +39,15 @@ func TestBreakout_SymlinkRejection(t *testing.T) {
 }
 
 func TestBreakout_PathTraversalCommandDenial(t *testing.T) {
-	pol := defaultTestPolicy()
+	artDir := t.TempDir()
+	pol := defaultTestPolicy(artDir)
 	pol.AllowedCommands = []string{"echo"}
 
 	// Attempt path traversal command injection like "../../bin/sh"
 	rc, err := Execute(Request{
 		Policy:      pol,
 		Workspace:   t.TempDir(),
-		ArtifactDir: t.TempDir(),
+		ArtifactDir: artDir,
 		Command:     "../../bin/sh",
 		Args:        []string{"-c", "id"},
 	})
@@ -59,7 +61,8 @@ func TestBreakout_PathTraversalCommandDenial(t *testing.T) {
 }
 
 func TestBreakout_AmbientSecretIsolation(t *testing.T) {
-	pol := defaultTestPolicy()
+	artDir := t.TempDir()
+	pol := defaultTestPolicy(artDir)
 	pol.AllowedSecrets = []string{"MY_ALLOWED_SECRET"}
 
 	os.Setenv("SENSITIVE_API_KEY", "super-secret-12345")
@@ -91,13 +94,14 @@ func TestBreakout_SignedReceiptVerification(t *testing.T) {
 		t.Fatalf("failed to generate key: %v", err)
 	}
 
-	pol := defaultTestPolicy()
+	artDir := t.TempDir()
+	pol := defaultTestPolicy(artDir)
 	pol.AllowedCommands = []string{"echo"}
 
 	rc, err := Execute(Request{
 		Policy:      pol,
 		Workspace:   t.TempDir(),
-		ArtifactDir: t.TempDir(),
+		ArtifactDir: artDir,
 		Command:     "echo",
 		Args:        []string{"hello"},
 		SignKey:     priv,
@@ -124,7 +128,8 @@ func TestBreakout_TimeoutEnforcement(t *testing.T) {
 		t.Skip("skipping timeout test in short mode")
 	}
 
-	pol := defaultTestPolicy()
+	artDir := t.TempDir()
+	pol := defaultTestPolicy(artDir)
 	pol.AllowedCommands = []string{"sleep"}
 	pol.TimeoutSeconds = 1
 
@@ -132,7 +137,7 @@ func TestBreakout_TimeoutEnforcement(t *testing.T) {
 	rc, err := Execute(Request{
 		Policy:      pol,
 		Workspace:   t.TempDir(),
-		ArtifactDir: t.TempDir(),
+		ArtifactDir: artDir,
 		Command:     "sleep",
 		Args:        []string{"10"},
 	})
@@ -148,14 +153,15 @@ func TestBreakout_TimeoutEnforcement(t *testing.T) {
 }
 
 func TestBreakout_OutputDigestSecurity(t *testing.T) {
-	pol := defaultTestPolicy()
+	artDir := t.TempDir()
+	pol := defaultTestPolicy(artDir)
 	pol.AllowedCommands = []string{"echo"}
 
 	// When Production=true and CaptureOutput=false, raw Stdout should be omitted but StdoutDigest populated
 	rc, err := Execute(Request{
 		Policy:        pol,
 		Workspace:     t.TempDir(),
-		ArtifactDir:   t.TempDir(),
+		ArtifactDir:   artDir,
 		Command:       "echo",
 		Args:          []string{"secret_token_data"},
 		Production:    true,

@@ -17,26 +17,42 @@ type DeniedAction struct {
 	Value  string `json:"value"`
 	Reason string `json:"reason"`
 }
+type WorkloadIdentity struct {
+	HostID           string `json:"host_id,omitempty"`
+	BinaryVersion    string `json:"binary_version,omitempty"`
+	Platform         string `json:"platform,omitempty"`
+	IsolationBackend string `json:"isolation_backend,omitempty"`
+}
+
+type ResourceUsage struct {
+	StdoutBytes int64 `json:"stdout_bytes"`
+	StderrBytes int64 `json:"stderr_bytes"`
+	DurationMS  int64 `json:"duration_ms"`
+}
+
 type Receipt struct {
-	SchemaVersion      string         `json:"schema_version"`
-	ExecutionID        string         `json:"execution_id"`
-	ArtifactDigest     string         `json:"artifact_digest"`
-	PolicyDigest       string         `json:"policy_digest"`
-	IsolationBackend   string         `json:"isolation_backend"`
-	StartedAt          time.Time      `json:"started_at"`
-	FinishedAt         time.Time      `json:"finished_at"`
-	Result             string         `json:"result"`
-	ExitCode           int            `json:"exit_code"`
-	TimedOut           bool           `json:"timed_out"`
-	OutputTruncated    bool           `json:"output_truncated"`
-	Stdout             string         `json:"stdout,omitempty"`
-	Stderr             string         `json:"stderr,omitempty"`
-	StdoutDigest       string         `json:"stdout_digest,omitempty"`
-	StderrDigest       string         `json:"stderr_digest,omitempty"`
-	DeniedActions      []DeniedAction `json:"denied_actions"`
-	Error              string         `json:"error,omitempty"`
-	Signature          string         `json:"signature,omitempty"`
-	SignatureAlgorithm string         `json:"signature_algorithm,omitempty"`
+	SchemaVersion      string            `json:"schema_version"`
+	ExecutionID        string            `json:"execution_id"`
+	ArtifactDigest     string            `json:"artifact_digest"`
+	DecisionID         string            `json:"decision_id,omitempty"`
+	PolicyDigest       string            `json:"policy_digest"`
+	WorkloadIdentity   *WorkloadIdentity `json:"workload_identity,omitempty"`
+	IsolationBackend   string            `json:"isolation_backend"`
+	StartedAt          time.Time         `json:"started_at"`
+	FinishedAt         time.Time         `json:"finished_at"`
+	Result             string            `json:"result"`
+	ExitCode           int               `json:"exit_code"`
+	TimedOut           bool              `json:"timed_out"`
+	OutputTruncated    bool              `json:"output_truncated"`
+	Stdout             string            `json:"stdout,omitempty"`
+	Stderr             string            `json:"stderr,omitempty"`
+	StdoutDigest       string            `json:"stdout_digest,omitempty"`
+	StderrDigest       string            `json:"stderr_digest,omitempty"`
+	ResourceUsage      *ResourceUsage    `json:"resource_usage,omitempty"`
+	DeniedActions      []DeniedAction    `json:"denied_actions"`
+	Error              string            `json:"error,omitempty"`
+	Signature          string            `json:"signature,omitempty"`
+	SignatureAlgorithm string            `json:"signature_algorithm,omitempty"`
 }
 
 func GenerateKeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {

@@ -24,11 +24,23 @@ func (e *EgressBroker) AuthorizeEgress(domain string, port int) (bool, string) {
 	if !e.AllowNetwork {
 		return false, "network access is disabled by policy"
 	}
-	if len(e.AllowedEgress) == 0 {
-		// If network is allowed and no egress rules are specified, all egress is allowed.
-		return true, "unrestricted network access allowed"
-	}
 	domain = strings.ToLower(strings.TrimSpace(domain))
+
+	// SSRF Protection: Block metadata services, loopback, and private addresses by default
+	if isSSRFOrPrivateTarget(domain) {
+		// Allow ONLY if explicitly matched by a non-wildcard rule
+		for _, rule := range e.AllowedEgress {
+			if strings.EqualFold(rule.Domain, domain) {
+				return true, fmt.Sprintf("matched explicit rule for internal/metadata target %s", domain)
+			}
+		}
+		return false, fmt.Sprintf("egress to metadata/internal target %s blocked for SSRF protection", domain)
+	}
+
+	if len(e.AllowedEgress) == 0 {
+		return false, "network access enabled but no egress rules specified; explicit wildcard '*' required"
+	}
+
 	for _, rule := range e.AllowedEgress {
 		rDomain := strings.ToLower(strings.TrimSpace(rule.Domain))
 		if rule.Port != 0 && rule.Port != port {
@@ -39,6 +51,26 @@ func (e *EgressBroker) AuthorizeEgress(domain string, port int) (bool, string) {
 		}
 	}
 	return false, fmt.Sprintf("egress to %s:%d denied by policy egress filter", domain, port)
+}
+
+func isSSRFOrPrivateTarget(target string) bool {
+	ssrfList := []string{
+		"169.254.169.254",
+		"169.254.169.253",
+		"127.0.0.1",
+		"::1",
+		"localhost",
+		"metadata.google.internal",
+	}
+	for _, s := range ssrfList {
+		if target == s || strings.HasSuffix(target, "."+s) {
+			return true
+		}
+	}
+	if strings.HasPrefix(target, "10.") || strings.HasPrefix(target, "192.168.") || strings.HasPrefix(target, "172.16.") {
+		return true
+	}
+	return false
 }
 
 func matchDomain(pattern, domain string) bool {

@@ -52,6 +52,30 @@ func TestEgressBrokerDisabledNetwork(t *testing.T) {
 	}
 }
 
+func TestSSRFBlocking(t *testing.T) {
+	p := policy.Policy{
+		AllowNetwork: true,
+		AllowedEgress: []policy.EgressRule{
+			{Domain: "*"},
+		},
+	}
+	eb := NewEgressBroker(p)
+
+	ssrfTargets := []string{
+		"169.254.169.254",
+		"127.0.0.1",
+		"localhost",
+		"10.0.0.1",
+		"192.168.1.1",
+	}
+
+	for _, target := range ssrfTargets {
+		if ok, reason := eb.AuthorizeEgress(target, 80); ok {
+			t.Errorf("expected SSRF target %s to be blocked even with wildcard egress rule, got allowed (%s)", target, reason)
+		}
+	}
+}
+
 func TestMCPBroker(t *testing.T) {
 	p := policy.Policy{
 		MCPBroker: &policy.MCPBrokerConfig{
