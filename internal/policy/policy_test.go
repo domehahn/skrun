@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"testing"
 )
@@ -57,3 +59,46 @@ func TestValidateResourceLimitsAndBroker(t *testing.T) {
 		t.Fatal("expected error for empty egress domain")
 	}
 }
+
+func TestSignedDecisionEnvelope(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	p := Policy{
+		SchemaVersion:   "1.0.0",
+		ArtifactDigest:  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		AllowedCommands: []string{"echo"},
+		TimeoutSeconds:  5,
+		MaxOutputBytes:  1024,
+	}
+
+	env := DecisionEnvelope{
+		DecisionID:    "dec-999",
+		Decision:      "ALLOW",
+		Environment:   "production",
+		RuntimePolicy: &p,
+		IssuedBy:      "skgate-prod",
+	}
+
+	data, err := env.CanonicalBytes()
+	if err != nil {
+		t.Fatalf("failed canonical bytes: %v", err)
+	}
+
+	sig := ed25519.Sign(priv, data)
+	env.Signature = hex.EncodeToString(sig)
+
+	if err := env.Verify(pub); err != nil {
+		t.Fatalf("failed to verify valid decision envelope: %v", err)
+	}
+
+	// Tamper with envelope
+	tampered := env
+	tampered.Decision = "DENY"
+	if err := tampered.Verify(pub); err == nil {
+		t.Fatal("expected error for tampered decision envelope")
+	}
+}
+

@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Build Binaries
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/skrun-linux-amd64 ./cmd/skrun
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/skrun-darwin-arm64 ./cmd/skrun
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/skrun-windows-amd64.exe ./cmd/skrun
+
+      - name: Generate SBOM, Provenance & Checksums
+        run: |
+          python3 scripts/generate_sbom.py \
+            --artifact dist/skrun-linux-amd64 \
+            --name skrun \
+            --version ${{ github.ref_name }} \
+            --output dist/skrun.spdx.json \
+            --provenance dist/skrun.slsa.json \
+            --checksums dist/checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

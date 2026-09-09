@@ -1,9 +1,11 @@
 package policy
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -47,8 +49,43 @@ type Policy struct {
 	MaxOutputBytes      int64            `json:"max_output_bytes"`
 }
 
-type decisionEnvelope struct {
+type DecisionEnvelope struct {
+	DecisionID    string  `json:"decision_id"`
+	Decision      string  `json:"decision"`
+	Environment   string  `json:"environment"`
 	RuntimePolicy *Policy `json:"runtime_policy"`
+	Signature     string  `json:"signature,omitempty"`
+	IssuedBy      string  `json:"issued_by,omitempty"`
+}
+
+func (env DecisionEnvelope) CanonicalBytes() ([]byte, error) {
+	clone := env
+	clone.Signature = ""
+	return json.Marshal(clone)
+}
+
+func (env DecisionEnvelope) Verify(pubKey ed25519.PublicKey) error {
+	if env.Decision != "ALLOW" {
+		return fmt.Errorf("skgate decision is %q, want ALLOW", env.Decision)
+	}
+	if len(pubKey) == 0 {
+		return nil
+	}
+	if env.Signature == "" {
+		return errors.New("skgate decision envelope is missing signature")
+	}
+	sigBytes, err := hex.DecodeString(env.Signature)
+	if err != nil || len(sigBytes) != ed25519.SignatureSize {
+		return errors.New("invalid decision envelope signature hex string")
+	}
+	data, err := env.CanonicalBytes()
+	if err != nil {
+		return err
+	}
+	if !ed25519.Verify(pubKey, data, sigBytes) {
+		return errors.New("skgate decision envelope signature verification failed")
+	}
+	return nil
 }
 
 func Load(path string) (Policy, error) {
@@ -59,7 +96,7 @@ func Load(path string) (Policy, error) {
 	return Parse(b)
 }
 func Parse(b []byte) (Policy, error) {
-	var env decisionEnvelope
+	var env DecisionEnvelope
 	if err := json.Unmarshal(b, &env); err == nil && env.RuntimePolicy != nil {
 		if err := env.RuntimePolicy.Validate(); err != nil {
 			return Policy{}, err
@@ -76,6 +113,23 @@ func Parse(b []byte) (Policy, error) {
 		return Policy{}, err
 	}
 	return p, nil
+}
+func LoadProductionPolicy(path string, pubKey ed25519.PublicKey) (Policy, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Policy{}, err
+	}
+	var env DecisionEnvelope
+	if err := json.Unmarshal(b, &env); err != nil || env.RuntimePolicy == nil {
+		return Policy{}, fmt.Errorf("production mode requires a valid skgate decision envelope: %w", err)
+	}
+	if err := env.Verify(pubKey); err != nil {
+		return Policy{}, fmt.Errorf("production decision envelope validation failed: %w", err)
+	}
+	if err := env.RuntimePolicy.Validate(); err != nil {
+		return Policy{}, err
+	}
+	return *env.RuntimePolicy, nil
 }
 func (p Policy) Validate() error {
 	if p.SchemaVersion != SchemaVersion {

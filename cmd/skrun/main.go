@@ -137,6 +137,7 @@ func execCmd(args []string) error {
 	workspace := fs.String("workspace", ".", "workspace directory")
 	receiptPath := fs.String("receipt", "runtime-receipt.json", "receipt output")
 	signKeyFile := fs.String("sign-key-file", "", "path to file containing hex-encoded Ed25519 private key")
+	skgateKeyFile := fs.String("skgate-key-file", "", "path to file containing hex-encoded skgate Ed25519 public key")
 	captureOutput := fs.Bool("capture-output", false, "capture raw stdout/stderr in receipt (defaults to false in production)")
 	prod := fs.Bool("production", false, "require production-grade isolation")
 	if err := fs.Parse(flagArgs); err != nil {
@@ -145,10 +146,34 @@ func execCmd(args []string) error {
 	if *pp == "" || *art == "" {
 		return errors.New("--policy and --artifact-dir are required")
 	}
-	pol, err := policy.Load(*pp)
-	if err != nil {
-		return err
+
+	var skgatePubKey ed25519.PublicKey
+	if *skgateKeyFile != "" {
+		b, err := os.ReadFile(*skgateKeyFile)
+		if err != nil {
+			return fmt.Errorf("failed to read --skgate-key-file: %w", err)
+		}
+		pubBytes, err := hex.DecodeString(strings.TrimSpace(string(b)))
+		if err != nil || len(pubBytes) != ed25519.PublicKeySize {
+			return errors.New("invalid --skgate-key-file: must be hex-encoded Ed25519 public key (32 bytes)")
+		}
+		skgatePubKey = ed25519.PublicKey(pubBytes)
 	}
+
+	var pol policy.Policy
+	var err error
+	if *prod {
+		pol, err = policy.LoadProductionPolicy(*pp, skgatePubKey)
+		if err != nil {
+			return fmt.Errorf("production mode policy validation failed: %w", err)
+		}
+	} else {
+		pol, err = policy.Load(*pp)
+		if err != nil {
+			return err
+		}
+	}
+
 	got, err := artifact.DigestDirectory(*art)
 	if err != nil {
 		return fmt.Errorf("artifact integrity: %w", err)

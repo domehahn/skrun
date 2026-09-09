@@ -147,6 +147,34 @@ func TestBreakout_TimeoutEnforcement(t *testing.T) {
 	}
 }
 
+func TestBreakout_OutputDigestSecurity(t *testing.T) {
+	pol := defaultTestPolicy()
+	pol.AllowedCommands = []string{"echo"}
+
+	// When Production=true and CaptureOutput=false, raw Stdout should be omitted but StdoutDigest populated
+	rc, err := Execute(Request{
+		Policy:        pol,
+		Workspace:     t.TempDir(),
+		ArtifactDir:   t.TempDir(),
+		Command:       "echo",
+		Args:          []string{"secret_token_data"},
+		Production:    true,
+		CaptureOutput: false,
+	})
+
+	if err != nil {
+		t.Skip("skipping production backend test on unsupported platform:", err)
+	}
+
+	if rc.StdoutDigest == "" {
+		t.Fatal("expected StdoutDigest to be populated in receipt")
+	}
+
+	if rc.Stdout != "" {
+		t.Fatalf("expected raw Stdout to be omitted when CaptureOutput=false in production mode, got %q", rc.Stdout)
+	}
+}
+
 func stringsSplit2(s, sep string) []string {
 	for i := 0; i < len(s); i++ {
 		if s[i] == '=' {
