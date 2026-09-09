@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_digest": "REPLACE_WITH_skRUN_HASH",
+  "allowed_commands": ["echo"],
+  "allowed_secrets": [],
+  "allow_workspace_write": false,
+  "allow_network": false,
+  "timeout_seconds": 30,
+  "max_output_bytes": 65536
+}
